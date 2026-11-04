@@ -1,10 +1,12 @@
-
 package com.cypherusuh.iidxtouch
 
 import android.graphics.Color as AndroidColor
+import android.graphics.Rect
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.MotionEvent
+import android.view.View
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -51,7 +53,10 @@ class MainActivity : ComponentActivity() {
                 lastTelemetryAt = lastTelemetryAt,
                 onTouchEvent = ::handleTouchEvent,
                 onTouchAreaSizeChanged = { size ->
-                    touchHandler.updateSize(size.width, size.height)
+                    touchHandler.updateSize(
+                        size.width,
+                        size.height
+                    )
                 },
                 onTelemetryTimeout = {
                     angularVelocity = 0f
@@ -60,43 +65,109 @@ class MainActivity : ComponentActivity() {
             )
         }
 
+        configureGestureExclusion()
+
         udpClient.start()
     }
 
     private fun configureWindow() {
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        )
+
         window.statusBarColor = AndroidColor.BLACK
         window.navigationBarColor = AndroidColor.BLACK
+    }
+
+    private fun configureGestureExclusion() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return
+        }
+
+        val decorView = window.decorView
+
+        fun updateExclusionRects(view: View) {
+            val density = resources.displayMetrics.density
+
+            val edgeWidth = (24 * density).toInt()
+                .coerceAtLeast(1)
+
+            val bottomReserved = (24 * density).toInt()
+
+            val width = view.width
+            val height = view.height
+
+            if (width <= 0 || height <= 0) return
+
+            val exclusionHeight = (
+                    height - bottomReserved
+                    ).coerceAtLeast(0)
+
+            val actualEdgeWidth = minOf(edgeWidth, width / 2)
+
+            view.systemGestureExclusionRects = listOf(
+                Rect(
+                    0,
+                    0,
+                    actualEdgeWidth,
+                    exclusionHeight
+                ),
+                Rect(
+                    width - actualEdgeWidth,
+                    0,
+                    width,
+                    exclusionHeight
+                )
+            )
+        }
+
+        decorView.addOnLayoutChangeListener {
+                view, _, _, _, _, _, _, _, _ ->
+
+            updateExclusionRects(view)
+        }
+
+        // Apply once immediately after the view has been laid out.
+        decorView.post {
+            updateExclusionRects(decorView)
+        }
     }
 
     private fun initializeNetwork() {
         udpClient = UdpClient(
             host = BACKEND_IP,
             port = BACKEND_PORT,
+
             onConnected = {
                 runOnUiThread {
                     connected = true
                 }
             },
+
             onError = { error ->
-                Log.e(TAG, "Backend connection failed: $error")
+                Log.e(
+                    TAG,
+                    "Backend connection failed: $error"
+                )
 
                 runOnUiThread {
                     connected = false
                 }
             },
+
             onTelemetry = { packet ->
                 runOnUiThread {
                     angularVelocity = packet.deltaAngle
                     averageRadius = packet.averageRadius
                     touchAngle = packet.touchAngle
                     fingerCount = packet.fingerCount
-                    lastTelemetryAt = android.os.SystemClock.uptimeMillis()
+
+                    lastTelemetryAt =
+                        android.os.SystemClock.uptimeMillis()
                 }
             }
         )
     }
-
 
     private fun initializeTouchHandler() {
         touchHandler = ScratchTouchHandler(
@@ -109,6 +180,7 @@ class MainActivity : ComponentActivity() {
                     fingerCount = sample.fingerCount
                 )
             },
+
             onRelease = { timestamp ->
                 udpClient.sendRelease(timestamp)
             }

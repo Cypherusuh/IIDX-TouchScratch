@@ -55,6 +55,11 @@ func (s *Scratch) Update(input Input, dt time.Duration) State {
 		s.state.Velocity *= math.Exp(
 			-s.config.Friction * deltaSeconds,
 		)
+
+		// Stop insignificant residual movement.
+		if math.Abs(s.state.Velocity) < 0.05 {
+			s.state.Velocity = 0
+		}
 	}
 
 	s.state.Position += s.state.Velocity * deltaSeconds

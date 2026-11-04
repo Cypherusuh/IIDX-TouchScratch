@@ -1,16 +1,16 @@
-
 package com.cypherusuh.iidxtouch
 
 import android.view.MotionEvent
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.sqrt
-
+import android.util.Log
 class ScratchTouchHandler(
     private val onSample: (ScratchSample) -> Unit,
     private val onRelease: (Long) -> Unit
 ) {
     companion object {
+        private const val TAG = "TouchScratch"
         private const val MIN_RADIUS_RATIO = 0.05f
     }
 
@@ -25,14 +25,26 @@ class ScratchTouchHandler(
     private var touchWidth = 0f
     private var touchHeight = 0f
 
+
     fun updateSize(width: Int, height: Int) {
         touchWidth = width.toFloat()
         touchHeight = height.toFloat()
     }
 
     fun handleTouchEvent(event: MotionEvent) {
+        Log.d(
+            TAG,
+            "Touch event: action=${event.actionMasked}, " +
+                    "pointers=${event.pointerCount}, " +
+                    "size=${touchWidth}x${touchHeight}"
+        )
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                // Recover from any stale pointers left by an interrupted gesture.
+                if (activePointers.isNotEmpty()) {
+                    release(event.eventTime)
+                }
+
                 activePointers.clear()
                 syncPointers(event)
             }
@@ -43,6 +55,7 @@ class ScratchTouchHandler(
             }
 
             MotionEvent.ACTION_MOVE -> {
+                // Process historical samples to preserve fast movement.
                 for (historyIndex in 0 until event.historySize) {
                     processSample(event, historyIndex)
                 }
@@ -75,10 +88,11 @@ class ScratchTouchHandler(
     }
 
     private fun release(timestamp: Long) {
-        if (activePointers.isNotEmpty()) {
-            activePointers.clear()
-            onRelease(timestamp)
-        }
+        // Always notify the backend, even if the final pointer
+        // was already removed by ACTION_POINTER_UP.
+        Log.d(TAG, "Touch released: timestamp=$timestamp")
+        activePointers.clear()
+        onRelease(timestamp)
     }
 
     private fun processSample(
@@ -155,7 +169,12 @@ class ScratchTouchHandler(
         } else {
             event.eventTime
         }
-
+        Log.d(
+            TAG,
+            "Touch sample: delta=${totalDeltaAngle / validFingerCount}, " +
+                    "radius=${totalRadius / validFingerCount}, " +
+                    "fingers=$validFingerCount"
+        )
         onSample(
             ScratchSample(
                 deltaAngle = totalDeltaAngle / validFingerCount,

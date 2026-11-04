@@ -1,4 +1,3 @@
-
 package com.cypherusuh.iidxtouch.network
 
 import android.os.SystemClock
@@ -30,6 +29,9 @@ class UdpClient(
     private var socket: DatagramSocket? = null
 
     @Volatile
+    private var resolvedAddress: InetAddress? = null
+
+    @Volatile
     private var connected = false
 
     @Volatile
@@ -41,6 +43,8 @@ class UdpClient(
         executor.execute {
             try {
                 val address = InetAddress.getByName(host)
+                resolvedAddress = address
+
                 val udpSocket = DatagramSocket()
                 socket = udpSocket
                 udpSocket.soTimeout = 500
@@ -55,7 +59,10 @@ class UdpClient(
                 )
 
                 val response = ByteArray(ScratchProtocol.PACKET_SIZE)
-                val responsePacket = DatagramPacket(response, response.size)
+                val responsePacket = DatagramPacket(
+                    response,
+                    response.size
+                )
 
                 var acknowledged = false
 
@@ -63,7 +70,12 @@ class UdpClient(
                     if (acknowledged) return@repeat
 
                     udpSocket.send(
-                        DatagramPacket(hello, hello.size, address, port)
+                        DatagramPacket(
+                            hello,
+                            hello.size,
+                            address,
+                            port
+                        )
                     )
 
                     try {
@@ -74,7 +86,8 @@ class UdpClient(
                             response.copyOf(responsePacket.length)
                         )
 
-                        if (ack?.type == ScratchProtocol.TYPE_ACK &&
+                        if (
+                            ack?.type == ScratchProtocol.TYPE_ACK &&
                             ack.sessionId == sessionId
                         ) {
                             acknowledged = true
@@ -99,6 +112,7 @@ class UdpClient(
 
             } catch (error: Exception) {
                 connected = false
+
                 Log.e(TAG, "Connection failed", error)
                 onError(error.message ?: "Unknown connection error")
             }
@@ -111,14 +125,19 @@ class UdpClient(
 
             while (!closed && !udpSocket.isClosed) {
                 try {
-                    val datagram = DatagramPacket(buffer, buffer.size)
+                    val datagram = DatagramPacket(
+                        buffer,
+                        buffer.size
+                    )
+
                     udpSocket.receive(datagram)
 
                     val packet = ScratchProtocol.decode(
                         buffer.copyOf(datagram.length)
                     ) ?: continue
 
-                    if (packet.type == ScratchProtocol.TYPE_TELEMETRY &&
+                    if (
+                        packet.type == ScratchProtocol.TYPE_TELEMETRY &&
                         packet.sessionId == sessionId
                     ) {
                         onTelemetry(packet)
@@ -130,6 +149,7 @@ class UdpClient(
                     if (!closed) {
                         Log.e(TAG, "Telemetry receive failed", error)
                     }
+
                     break
                 }
             }
@@ -161,7 +181,9 @@ class UdpClient(
         )
     }
 
-    fun sendRelease(timestamp: Long = SystemClock.uptimeMillis()) {
+    fun sendRelease(
+        timestamp: Long = SystemClock.uptimeMillis()
+    ) {
         sendPacket(
             ScratchPacket(
                 type = ScratchProtocol.TYPE_RELEASE,
@@ -173,33 +195,59 @@ class UdpClient(
         )
     }
 
+
     private fun sendPacket(
         packet: ScratchPacket,
         description: String
     ) {
         if (!connected || closed) return
 
+        val udpSocket = socket ?: return
+        val address = resolvedAddress ?: return
         val encoded = ScratchProtocol.encode(packet)
 
-        executor.execute {
-            try {
-                val udpSocket = socket ?: return@execute
-                val address = InetAddress.getByName(host)
+        try {
+            executor.execute {
+                if (closed || udpSocket.isClosed) return@execute
 
-                udpSocket.send(
-                    DatagramPacket(encoded, encoded.size, address, port)
-                )
-            } catch (error: Exception) {
-                if (!closed) {
-                    Log.e(TAG, "Failed to send $description packet", error)
+                try {
+                    udpSocket.send(
+                        DatagramPacket(
+                            encoded,
+                            encoded.size,
+                            address,
+                            port
+                        )
+                    )
+
+                    Log.d(
+                        TAG,
+                        "UDP packet successfully sent: " +
+                                "type=${encoded[5].toInt() and 0xFF}, " +
+                                "description=$description"
+                    )
+                } catch (error: Exception) {
+                    if (!closed) {
+                        Log.e(
+                            TAG,
+                            "Failed to send $description packet",
+                            error
+                        )
+                    }
                 }
+            }
+        } catch (error: java.util.concurrent.RejectedExecutionException) {
+            if (!closed) {
+                Log.e(TAG, "UDP sender is shutting down", error)
             }
         }
     }
 
+
     fun close() {
         closed = true
         connected = false
+
         socket?.close()
         executor.shutdownNow()
         receiverThread?.interrupt()
