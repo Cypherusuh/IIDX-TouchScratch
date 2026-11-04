@@ -19,11 +19,13 @@ data class ScratchPacket(
 
 object ScratchProtocol {
     const val PACKET_SIZE = 40
+
     const val TYPE_HELLO = 1
     const val TYPE_TOUCH = 2
     const val TYPE_HEARTBEAT = 3
     const val TYPE_ACK = 4
     const val TYPE_TELEMETRY = 5
+    const val TYPE_RELEASE = 6
 
     private const val VERSION = 2
 
@@ -69,7 +71,8 @@ object ScratchProtocol {
     fun decode(data: ByteArray): ScratchPacket? {
         if (data.size != PACKET_SIZE) return null
 
-        val buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
+        val buffer = ByteBuffer.wrap(data)
+            .order(ByteOrder.LITTLE_ENDIAN)
 
         val magic = ByteArray(4)
         buffer.get(magic)

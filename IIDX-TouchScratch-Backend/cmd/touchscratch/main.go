@@ -6,6 +6,7 @@ import (
 
 	"iidxtouchscratch/internal/input"
 	"iidxtouchscratch/internal/network"
+	"iidxtouchscratch/internal/physics"
 	"iidxtouchscratch/internal/protocol"
 )
 
@@ -13,39 +14,65 @@ func main() {
 	log.Println("IIDX TouchScratch Backend")
 
 	processor := input.NewProcessor()
-	lastTelemetry := time.Time{}
+	scratch := physics.NewScratch(physics.Config{
+		Friction: 4.0,
+	})
 
-	onTouch := func(packet protocol.Packet) *protocol.Packet {
-		result := processor.Process(input.Sample{
-			DeltaAngle:    float64(packet.DeltaAngle),
-			AverageRadius: float64(packet.AverageRadius),
-			TouchAngle:    float64(packet.TouchAngle),
-			Timestamp:     packet.Timestamp,
-			FingerCount:   packet.FingerCount,
-		})
+	var (
+		touching      bool
+		inputVelocity float64
+		averageRadius float64
+		touchAngle    float64
+		fingerCount   uint8
+	)
 
-		now := time.Now()
+	lastPhysicsUpdate := time.Now()
 
-		if !lastTelemetry.IsZero() &&
-			now.Sub(lastTelemetry) < 33*time.Millisecond {
-			return nil
-		}
+	onTouch := func(packet protocol.Packet) {
+		switch packet.Type {
+		case protocol.TypeTouch:
+			result := processor.Process(input.Sample{
+				DeltaAngle:    float64(packet.DeltaAngle),
+				AverageRadius: float64(packet.AverageRadius),
+				TouchAngle:    float64(packet.TouchAngle),
+				Timestamp:     packet.Timestamp,
+				FingerCount:   packet.FingerCount,
+			})
 
-		lastTelemetry = now
+			touching = packet.FingerCount > 0
 
-		return &protocol.Packet{
-			Type:          protocol.TypeTelemetry,
-			SessionID:     packet.SessionID,
-			Sequence:      packet.Sequence,
-			Timestamp:     packet.Timestamp,
-			DeltaAngle:    float32(result.Velocity),
-			AverageRadius: float32(result.AverageRadius),
-			TouchAngle:    float32(result.TouchAngle),
-			FingerCount:   result.FingerCount,
+			inputVelocity = result.Velocity
+			averageRadius = result.AverageRadius
+			touchAngle = result.TouchAngle
+			fingerCount = result.FingerCount
+
+		case protocol.TypeRelease:
+			// Preserve inputVelocity.
+			// The physics engine will now apply friction.
+			touching = false
+			fingerCount = 0
 		}
 	}
 
-	if err := network.ListenUDP(":6699", onTouch); err != nil {
+	onTick := func() *protocol.Packet {
+		now := time.Now()
+		dt := now.Sub(lastPhysicsUpdate)
+		lastPhysicsUpdate = now
+
+		state := scratch.Update(physics.Input{
+			Velocity: inputVelocity,
+			Touching: touching,
+		}, dt)
+
+		return &protocol.Packet{
+			DeltaAngle:    float32(state.Velocity),
+			AverageRadius: float32(averageRadius),
+			TouchAngle:    float32(touchAngle),
+			FingerCount:   fingerCount,
+		}
+	}
+
+	if err := network.ListenUDP(":6699", onTouch, onTick); err != nil {
 		log.Fatal(err)
 	}
 }

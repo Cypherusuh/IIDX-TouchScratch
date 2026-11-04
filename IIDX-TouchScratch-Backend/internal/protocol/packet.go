@@ -15,6 +15,7 @@ const (
 	TypeHeartbeat = 3
 	TypeAck       = 4
 	TypeTelemetry = 5
+	TypeRelease   = 6
 )
 
 var magic = [4]byte{'I', 'D', 'X', 'T'}

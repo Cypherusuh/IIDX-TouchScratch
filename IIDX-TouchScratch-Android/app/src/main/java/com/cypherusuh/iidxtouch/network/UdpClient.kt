@@ -7,9 +7,9 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.SocketTimeoutException
+import java.security.SecureRandom
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
-import java.security.SecureRandom
 
 class UdpClient(
     private val host: String,
@@ -75,7 +75,8 @@ class UdpClient(
                         )
 
                         if (ack?.type == ScratchProtocol.TYPE_ACK &&
-                            ack.sessionId == sessionId) {
+                            ack.sessionId == sessionId
+                        ) {
                             acknowledged = true
                         }
                     } catch (_: SocketTimeoutException) {
@@ -118,7 +119,8 @@ class UdpClient(
                     ) ?: continue
 
                     if (packet.type == ScratchProtocol.TYPE_TELEMETRY &&
-                        packet.sessionId == sessionId) {
+                        packet.sessionId == sessionId
+                    ) {
                         onTelemetry(packet)
                     }
 
@@ -144,9 +146,7 @@ class UdpClient(
         timestamp: Long,
         fingerCount: Int
     ) {
-        if (!connected || closed) return
-
-        val packet = ScratchProtocol.encode(
+        sendPacket(
             ScratchPacket(
                 type = ScratchProtocol.TYPE_TOUCH,
                 sessionId = sessionId,
@@ -156,8 +156,30 @@ class UdpClient(
                 averageRadius = averageRadius,
                 fingerCount = fingerCount,
                 touchAngle = touchAngle
-            )
+            ),
+            "touch"
         )
+    }
+
+    fun sendRelease(timestamp: Long = SystemClock.uptimeMillis()) {
+        sendPacket(
+            ScratchPacket(
+                type = ScratchProtocol.TYPE_RELEASE,
+                sessionId = sessionId,
+                sequence = sequence.getAndIncrement(),
+                timestamp = timestamp
+            ),
+            "release"
+        )
+    }
+
+    private fun sendPacket(
+        packet: ScratchPacket,
+        description: String
+    ) {
+        if (!connected || closed) return
+
+        val encoded = ScratchProtocol.encode(packet)
 
         executor.execute {
             try {
@@ -165,11 +187,11 @@ class UdpClient(
                 val address = InetAddress.getByName(host)
 
                 udpSocket.send(
-                    DatagramPacket(packet, packet.size, address, port)
+                    DatagramPacket(encoded, encoded.size, address, port)
                 )
             } catch (error: Exception) {
                 if (!closed) {
-                    Log.e(TAG, "Failed to send touch packet", error)
+                    Log.e(TAG, "Failed to send $description packet", error)
                 }
             }
         }
