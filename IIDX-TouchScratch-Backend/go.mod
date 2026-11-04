@@ -1,0 +1,3 @@
+module iidxtouchscratch
+
+go 1.27.3
