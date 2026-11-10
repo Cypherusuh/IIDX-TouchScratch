@@ -79,6 +79,7 @@ class MainActivity : ComponentActivity() {
         window.navigationBarColor = AndroidColor.BLACK
     }
 
+
     private fun configureGestureExclusion() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             return
@@ -89,45 +90,49 @@ class MainActivity : ComponentActivity() {
         fun updateExclusionRects(view: View) {
             val density = resources.displayMetrics.density
 
-            val edgeWidth = (24 * density).toInt()
-                .coerceAtLeast(1)
+            // Android normally limits exclusion to 200dp per screen edge.
+            val maxExclusionHeight = (200 * density).toInt()
 
-            val bottomReserved = (24 * density).toInt()
+            // Cover the system back gesture area.
+            val edgeWidth = (32 * density).toInt()
 
             val width = view.width
             val height = view.height
 
             if (width <= 0 || height <= 0) return
 
-            val exclusionHeight = (
-                    height - bottomReserved
-                    ).coerceAtLeast(0)
-
+            val exclusionHeight = minOf(height, maxExclusionHeight)
+            val top = (height - exclusionHeight) / 2
             val actualEdgeWidth = minOf(edgeWidth, width / 2)
 
             view.systemGestureExclusionRects = listOf(
                 Rect(
                     0,
-                    0,
+                    top,
                     actualEdgeWidth,
-                    exclusionHeight
+                    top + exclusionHeight
                 ),
                 Rect(
                     width - actualEdgeWidth,
-                    0,
+                    top,
                     width,
-                    exclusionHeight
+                    top + exclusionHeight
                 )
+            )
+
+            Log.d(
+                TAG,
+                "Gesture exclusion updated: " +
+                        "height=${exclusionHeight / density}dp, " +
+                        "width=${actualEdgeWidth / density}dp"
             )
         }
 
         decorView.addOnLayoutChangeListener {
                 view, _, _, _, _, _, _, _, _ ->
-
             updateExclusionRects(view)
         }
 
-        // Apply once immediately after the view has been laid out.
         decorView.post {
             updateExclusionRects(decorView)
         }

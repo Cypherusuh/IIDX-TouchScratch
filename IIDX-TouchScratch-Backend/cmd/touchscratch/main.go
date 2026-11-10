@@ -19,7 +19,7 @@ import (
 const (
 	spiceAddress = "127.0.0.1:1337"
 	analogName   = "Turntable P1"
-	outputRate   = time.Second / 60
+	outputRate   = time.Second / 120
 )
 
 func main() {

@@ -56,7 +56,7 @@ func ListenUDP(
 		}
 	}()
 
-	ticker := time.NewTicker(time.Second / 60)
+	ticker := time.NewTicker(time.Second / 120)
 	defer ticker.Stop()
 
 	var activeSession uint64
